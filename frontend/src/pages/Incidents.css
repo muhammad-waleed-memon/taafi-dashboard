@@ -1,0 +1,59 @@
+/* Copyright 2026 Muhammad Waleed */
+/* Licensed under the Apache License, Version 2.0 */
+/* Author: Muhammad Waleed */
+
+.incidents-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.filter-bar {
+  padding: 1rem 1.5rem !important;
+}
+
+.filter-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.select-filter {
+  min-width: 180px;
+  background: rgba(255,255,255,0.02);
+}
+
+.table-loading {
+  padding: 5rem;
+}
+
+.text-cyan {
+  color: var(--accent-primary);
+  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.3));
+}
+
+.pagination-wrapper {
+  margin-top: 1.5rem;
+}
+
+.pagination-info {
+  font-size: 0.815rem;
+  color: var(--text-muted);
+}
+
+.btn-icon-only {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50% !important;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

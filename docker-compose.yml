@@ -1,0 +1,154 @@
+# Copyright 2026 Muhammad Waleed
+# Licensed under the Apache License, Version 2.0
+# Author: Muhammad Waleed
+
+version: "3.9"
+
+services:
+  # ─── TAAFI Agent ─────────────────────────────────────────────
+  taafi-agent:
+    build:
+      context: ../taafi-agent
+      dockerfile: Dockerfile
+    container_name: taafi-agent
+    restart: unless-stopped
+    environment:
+      - TAAFI_AGENT_ID=agent-primary-01
+      - TAAFI_ORCHESTRATOR_URL=http://taafi-orchestrator:50051
+      - TAAFI_DATABASE_URL=${DATABASE_URL:-postgres://taafi:taafi@postgres:5432/taafi}
+      - TAAFI_MEMORY_DB_PATH=/data/taafi_memory.db
+      - TAAFI_HEARTBEAT_INTERVAL=30
+      - TAAFI_METRICS_INTERVAL=10
+      - RUST_LOG=info
+    volumes:
+      - agent-data:/data
+    networks:
+      - taafi-network
+    depends_on:
+      - taafi-orchestrator
+      - postgres
+
+  # ─── TAAFI Orchestrator ──────────────────────────────────────
+  taafi-orchestrator:
+    build:
+      context: ../taafi-orchestrator
+      dockerfile: Dockerfile
+    container_name: taafi-orchestrator
+    restart: unless-stopped
+    ports:
+      - "50051:50051"
+      - "8081:8081"
+    environment:
+      - TAAFI_DATABASE_URL=postgres://taafi:taafi@postgres:5432/taafi_orchestrator
+      - TAAFI_QWEN_API_KEY=${QWEN_API_KEY}
+      - TAAFI_QWEN_MODEL=${QWEN_MODEL:-qwen-plus}
+      - TAAFI_OLLAMA_URL=http://ollama:11434
+      - TAAFI_OLLAMA_MODEL=qwen2.5-coder:7b
+      - TAAFI_DAILY_BUDGET=${DAILY_BUDGET:-5.0}
+      - TAAFI_GRPC_PORT=50051
+      - TAAFI_DASHBOARD_PORT=8081
+      - RUST_LOG=info
+    volumes:
+      - orchestrator-data:/data
+    networks:
+      - taafi-network
+    depends_on:
+      - postgres
+      - redis
+
+  # ─── Dashboard Backend (FastAPI) ─────────────────────────────
+  dashboard-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dashboard-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DASHBOARD_DB_URL:-sqlite+aiosqlite:///./taafi_dashboard.db}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - TAAFI_DAILY_BUDGET=${DAILY_BUDGET:-5.0}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - dashboard-data:/app/data
+    networks:
+      - taafi-network
+    depends_on:
+      - redis
+
+  # ─── Dashboard Frontend (React/Nginx) ───────────────────────
+  dashboard-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dashboard-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - taafi-network
+    depends_on:
+      - dashboard-backend
+
+  # ─── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: taafi-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=taafi
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-taafi}
+      - POSTGRES_DB=taafi
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - taafi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taafi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: taafi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - taafi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Ollama (Local LLM Fallback) ────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: taafi-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - taafi-network
+
+volumes:
+  agent-data:
+  orchestrator-data:
+  dashboard-data:
+  postgres-data:
+  redis-data:
+  ollama-data:
+
+networks:
+  taafi-network:
+    driver: bridge

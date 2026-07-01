@@ -1,0 +1,203 @@
+/* Copyright 2026 Muhammad Waleed */
+/* Licensed under the Apache License, Version 2.0 */
+/* Author: Muhammad Waleed */
+
+.table-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  color: var(--accent-primary);
+  margin-bottom: 1.5rem;
+  opacity: 0.8;
+  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.2));
+}
+
+.table-empty-state h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.table-empty-state p {
+  font-size: 0.875rem;
+  max-width: 400px;
+  color: var(--text-muted);
+}
+
+.incident-row {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.incident-row:hover td {
+  background: rgba(0, 240, 255, 0.02) !important;
+}
+
+.row-expanded td {
+  background: rgba(0, 240, 255, 0.01) !important;
+  border-bottom-color: transparent;
+}
+
+.incident-type-cell {
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.text-truncate {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-id-code {
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(255,255,255,0.05);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--glass-border);
+}
+
+/* Status Pill */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 50px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-pill.active {
+  background: var(--danger-bg);
+  color: var(--danger);
+  animation: pulse-glow 2s infinite alternate;
+}
+
+.status-pill.resolved {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 4px rgba(255, 50, 50, 0.1); }
+  100% { box-shadow: 0 0 10px rgba(255, 50, 50, 0.3); }
+}
+
+.btn-icon-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast);
+}
+
+.incident-row:hover .btn-icon-toggle {
+  color: var(--text-primary);
+}
+
+/* Expanded Detail Section */
+.expanded-detail-row td {
+  padding: 0 !important;
+}
+
+.incident-expanded-content {
+  background: rgba(13, 17, 28, 0.3);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 1.5rem;
+  animation: slideDownFade 0.25s ease-out;
+}
+
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.detail-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+}
+
+.table-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  margin-right: 0.5rem;
+  color: var(--text-secondary);
+}
+
+/* Query block code styling */
+.query-box-wrapper {
+  margin-top: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.query-box-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255,255,255,0.02);
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.query-code-block {
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.825rem;
+  color: var(--accent-primary);
+  line-height: 1.5;
+}
+
+.expanded-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+}

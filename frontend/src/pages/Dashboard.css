@@ -1,0 +1,112 @@
+/* Copyright 2026 Muhammad Waleed */
+/* Licensed under the Apache License, Version 2.0 */
+/* Author: Muhammad Waleed */
+
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 0.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.header-status {
+  padding: 0.5rem 1rem !important;
+  font-size: 0.815rem;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.pulse-green {
+  color: var(--success);
+  filter: drop-shadow(0 0 4px var(--success));
+  animation: beaconPulse 1.5s infinite alternate;
+}
+
+@keyframes beaconPulse {
+  0% { transform: scale(0.95); opacity: 0.6; }
+  100% { transform: scale(1.15); opacity: 1; }
+}
+
+.status-ok {
+  color: var(--success);
+}
+
+/* Stats grid sizing */
+.stats-grid {
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 992px) {
+  .col-span-3-lg {
+    grid-column: span 3 / span 3;
+  }
+  .col-span-8-lg {
+    grid-column: span 8 / span 8;
+  }
+  .col-span-4-lg {
+    grid-column: span 4 / span 4;
+  }
+}
+
+/* Chart Cards styling */
+.chart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chart-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chart-header h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-body {
+  position: relative;
+  width: 100%;
+}
+
+.legend-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Recent incident headers */
+.recent-incidents-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-header h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+}

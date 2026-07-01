@@ -1,0 +1,92 @@
+/* Copyright 2026 Muhammad Waleed */
+/* Licensed under the Apache License, Version 2.0 */
+/* Author: Muhammad Waleed */
+
+.metrics-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.metrics-loading {
+  padding: 12rem;
+}
+
+/* Summary Row styling */
+.summary-row {
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 992px) {
+  .col-span-4-lg {
+    grid-column: span 4 / span 4;
+  }
+  .col-span-6-lg {
+    grid-column: span 6 / span 6;
+  }
+}
+
+.metric-summary-box {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem !important;
+}
+
+.metric-box-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  padding: 10px;
+}
+
+.metric-box-icon.text-cyan {
+  color: var(--accent-primary);
+  filter: drop-shadow(0 0 5px rgba(0, 240, 255, 0.2));
+  border-color: rgba(0, 240, 255, 0.2);
+}
+
+.metric-box-icon.text-purple {
+  color: var(--accent-secondary);
+  filter: drop-shadow(0 0 5px rgba(160, 50, 255, 0.2));
+  border-color: rgba(160, 50, 255, 0.2);
+}
+
+.metric-box-icon.text-green {
+  color: var(--success);
+  filter: drop-shadow(0 0 5px rgba(50, 220, 100, 0.2));
+  border-color: rgba(50, 220, 100, 0.2);
+}
+
+.metric-box-text h3 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.metric-box-text p {
+  font-size: 0.815rem;
+  color: var(--text-secondary);
+}
+
+/* Large Timeline Card */
+.timeline-card-large {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.distribution-charts {
+  margin-top: 0.5rem;
+}
+
+.distribution-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}

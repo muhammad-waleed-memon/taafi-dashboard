@@ -1,0 +1,110 @@
+/* Copyright 2026 Muhammad Waleed */
+/* Licensed under the Apache License, Version 2.0 */
+/* Author: Muhammad Waleed */
+
+.stats-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 140px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stats-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.stats-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.stats-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+}
+
+.stats-card-body {
+  margin-top: 1rem;
+}
+
+.stats-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.stats-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+}
+
+.stats-trend {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
+.trend-up {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.trend-down {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.trend-neutral {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.stats-subtitle {
+  color: var(--text-muted);
+}
+
+/* Neon glow classes based on accentColor */
+.stats-card.accent-cyan:hover {
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.1), 0 8px 32px 0 rgba(0,0,0,0.3);
+}
+
+.stats-card.accent-purple:hover {
+  border-color: rgba(160, 50, 255, 0.3);
+  box-shadow: 0 0 20px rgba(160, 50, 255, 0.1), 0 8px 32px 0 rgba(0,0,0,0.3);
+}
+
+.stats-card.accent-green:hover {
+  border-color: rgba(50, 220, 100, 0.3);
+  box-shadow: 0 0 20px rgba(50, 220, 100, 0.1), 0 8px 32px 0 rgba(0,0,0,0.3);
+}
+
+.stats-card.accent-red:hover {
+  border-color: rgba(255, 50, 50, 0.3);
+  box-shadow: 0 0 20px rgba(255, 50, 50, 0.1), 0 8px 32px 0 rgba(0,0,0,0.3);
+}
+
+.stats-card.accent-yellow:hover {
+  border-color: rgba(250, 200, 50, 0.3);
+  box-shadow: 0 0 20px rgba(250, 200, 50, 0.1), 0 8px 32px 0 rgba(0,0,0,0.3);
+}
