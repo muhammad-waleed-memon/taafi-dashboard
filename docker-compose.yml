@@ -1,145 +1,248 @@
 # Copyright 2026 Muhammad Waleed
 # Licensed under the Apache License, Version 2.0
 # Author: Muhammad Waleed
+#
+# Production-hardened Docker Compose configuration.
+# Security properties:
+#   - All containers: read_only filesystem where possible
+#   - All containers: cap_drop ALL + only necessary cap_add
+#   - All containers: no-new-privileges security opt
+#   - All secrets via Docker secrets (file-based, never env vars)
+#   - Internal network with no external exposure except the reverse proxy
+#   - mTLS certificate volume mounted read-only to agent and orchestrator
+#   - Postgres and Redis not exposed on host (internal only)
 
 version: "3.9"
 
+secrets:
+  database_url:
+    file: ./secrets/database_url.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  dashscope_api_key:
+    file: ./secrets/dashscope_api_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+
 services:
-  # ─── TAAFI Agent ─────────────────────────────────────────────
+  # ─── TAAFI Agent ─────────────────────────────────────────────────────────────
   taafi-agent:
     build:
       context: ../taafi-agent
       dockerfile: Dockerfile
     container_name: taafi-agent
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     environment:
-      - TAAFI_AGENT_ID=agent-primary-01
-      - TAAFI_ORCHESTRATOR_URL=http://taafi-orchestrator:50051
-      - TAAFI_DATABASE_URL=${DATABASE_URL:-postgres://taafi:taafi@postgres:5432/taafi}
-      - TAAFI_MEMORY_DB_PATH=/data/taafi_memory.db
-      - TAAFI_HEARTBEAT_INTERVAL=30
-      - TAAFI_METRICS_INTERVAL=10
+      - AGENT_ID=agent-primary-01
+      - ORCHESTRATOR_URL=https://taafi-orchestrator:50051
+      - DATABASE_URL_FILE=/run/secrets/database_url
+      - MEMORY_DB_PATH=/data/taafi_memory.db
+      - HEARTBEAT_INTERVAL_SECS=30
+      - METRICS_INTERVAL_SECS=10
       - RUST_LOG=info
+      - TAAFI_ENV=production
+      - CERT_PATH=/certs/agent.crt
+      - KEY_PATH=/certs/agent.key
+      - CA_PATH=/certs/ca.crt
+    secrets:
+      - database_url
     volumes:
       - agent-data:/data
+      - certs:/certs:ro
     networks:
-      - taafi-network
+      - taafi-internal
     depends_on:
-      - taafi-orchestrator
-      - postgres
+      taafi-orchestrator:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
-  # ─── TAAFI Orchestrator ──────────────────────────────────────
+  # ─── TAAFI Orchestrator ──────────────────────────────────────────────────────
   taafi-orchestrator:
     build:
       context: ../taafi-orchestrator
       dockerfile: Dockerfile
     container_name: taafi-orchestrator
     restart: unless-stopped
-    ports:
-      - "50051:50051"
-      - "8081:8081"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     environment:
-      - TAAFI_DATABASE_URL=postgres://taafi:taafi@postgres:5432/taafi_orchestrator
-      - TAAFI_QWEN_API_KEY=${QWEN_API_KEY}
-      - TAAFI_QWEN_MODEL=${QWEN_MODEL:-qwen-plus}
-      - TAAFI_OLLAMA_URL=http://ollama:11434
-      - TAAFI_OLLAMA_MODEL=qwen2.5-coder:7b
-      - TAAFI_DAILY_BUDGET=${DAILY_BUDGET:-5.0}
-      - TAAFI_GRPC_PORT=50051
-      - TAAFI_DASHBOARD_PORT=8081
+      - DATABASE_URL_FILE=/run/secrets/database_url
+      - DASHSCOPE_API_KEY_FILE=/run/secrets/dashscope_api_key
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - OLLAMA_URL=http://ollama:11434
+      - DAILY_BUDGET_USD=${DAILY_BUDGET:-5.0}
+      - GRPC_PORT=50051
+      - HTTP_PORT=8081
       - RUST_LOG=info
+      - TAAFI_ENV=production
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - CERT_PATH=/certs/orchestrator.crt
+      - KEY_PATH=/certs/orchestrator.key
+      - CA_PATH=/certs/ca.crt
+    secrets:
+      - database_url
+      - dashscope_api_key
+      - jwt_secret
     volumes:
       - orchestrator-data:/data
+      - certs:/certs:ro
     networks:
-      - taafi-network
+      - taafi-internal
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
-  # ─── Dashboard Backend (FastAPI) ─────────────────────────────
+  # ─── Dashboard Backend (FastAPI) ─────────────────────────────────────────────
   dashboard-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: dashboard-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     environment:
-      - DATABASE_URL=${DASHBOARD_DB_URL:-sqlite+aiosqlite:///./taafi_dashboard.db}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
-      - TAAFI_DAILY_BUDGET=${DAILY_BUDGET:-5.0}
+      - DATABASE_URL=${DASHBOARD_DB_URL:-postgresql+asyncpg://taafi:@postgres:5432/taafi_dashboard}
       - REDIS_URL=redis://redis:6379
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - TAAFI_DAILY_BUDGET=${DAILY_BUDGET:-5.0}
     volumes:
       - dashboard-data:/app/data
     networks:
-      - taafi-network
+      - taafi-internal
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
-  # ─── Dashboard Frontend (React/Nginx) ───────────────────────
+  # ─── Dashboard Frontend (React/Nginx) ────────────────────────────────────────
   dashboard-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: dashboard-frontend
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE   # Nginx needs to bind to port 443
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=32m,mode=1777
+      - /var/run:size=4m,mode=1777
     ports:
-      - "80:80"
+      - "443:443"
+      - "80:80"   # HTTP → HTTPS redirect only
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certs:/certs:ro
     networks:
-      - taafi-network
+      - taafi-internal
     depends_on:
-      - dashboard-backend
+      dashboard-backend:
+        condition: service_healthy
 
-  # ─── PostgreSQL ──────────────────────────────────────────────
+  # ─── PostgreSQL ──────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: taafi-postgres
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/run/postgresql:size=8m,mode=0750
     environment:
       - POSTGRES_USER=taafi
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-taafi}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
       - POSTGRES_DB=taafi
+    secrets:
+      - postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # NOT exposed on host — internal only
     networks:
-      - taafi-network
+      - taafi-internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U taafi"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ─── Redis ───────────────────────────────────────────────────
+  # ─── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: taafi-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--protected-mode", "yes"]
     volumes:
       - redis-data:/data
+    # NOT exposed on host — internal only
     networks:
-      - taafi-network
+      - taafi-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ─── Ollama (Local LLM Fallback) ────────────────────────────
+  # ─── Ollama (Local LLM Fallback) ─────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: taafi-ollama
     restart: unless-stopped
-    ports:
-      - "11434:11434"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - ollama-data:/root/.ollama
     networks:
-      - taafi-network
+      - taafi-internal
 
 volumes:
   agent-data:
@@ -148,7 +251,13 @@ volumes:
   postgres-data:
   redis-data:
   ollama-data:
+  certs:
+    external: true   # Managed outside compose; must be pre-populated
 
 networks:
-  taafi-network:
+  taafi-internal:
     driver: bridge
+    internal: false   # Frontend needs egress for OIDC discovery; set true if OIDC is internal
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

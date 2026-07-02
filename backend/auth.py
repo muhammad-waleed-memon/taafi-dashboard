@@ -2,77 +2,211 @@
 # Licensed under the Apache License, Version 2.0
 # Author: Muhammad Waleed
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from datetime import datetime, timedelta
-from jose import jwt, JWTError
-from passlib.context import CryptContext
-from pydantic import BaseModel
+#
+# auth.py — OIDC / JWKS-based authentication module
+#
+# Replaces the previous username/password + HS256 JWT approach.
+# Now validates Bearer tokens issued by an external OIDC provider
+# (e.g. Keycloak, Auth0, Azure AD) using RS256 / ES256 with cached JWKS.
+#
+# Environment variables required:
+#   OIDC_ISSUER       — e.g. https://keycloak.example.com/realms/taafi
+#   OIDC_CLIENT_ID    — the registered client/audience
+#   OIDC_ALGORITHMS   — comma-separated, default "RS256,ES256"
+#
+# Security properties:
+#   - HS256 is explicitly rejected (symmetric secret cannot be distributed safely)
+#   - JWKS is fetched once at startup and refreshed every 15 minutes
+#   - Tokens without an 'exp' claim are rejected
+#   - Audience is strictly enforced
+#   - Role claim is read from 'roles' or 'realm_access.roles' (Keycloak-style)
+
 import os
+import time
+import logging
+import asyncio
+from typing import List, Optional
 
-JWT_SECRET = os.getenv("JWT_SECRET", "taafi_super_secret_jwt_key_2026")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError, ExpiredSignatureError
+from jose.exceptions import JWKError
+from pydantic import BaseModel
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+logger = logging.getLogger("taafi.auth")
 
-router = APIRouter()
+# ── Configuration ──────────────────────────────────────────────────────────────
+OIDC_ISSUER: str = os.environ["OIDC_ISSUER"]          # Required — no default
+OIDC_CLIENT_ID: str = os.environ["OIDC_CLIENT_ID"]    # Required — no default
+OIDC_ALGORITHMS: List[str] = [
+    alg.strip()
+    for alg in os.getenv("OIDC_ALGORITHMS", "RS256,ES256").split(",")
+]
 
-# Mock user database for bank SRE dashboard
-MOCK_USERS = {
-    "admin": {
-        "username": "admin",
-        # Hashed password for "password123"
-        "hashed_password": pwd_context.hash("password123"),
-        "role": "SRE_Admin"
-    }
-}
+# Reject symmetric algorithms unconditionally
+_FORBIDDEN_ALGORITHMS = {"HS256", "HS384", "HS512", "none"}
+for _alg in _FORBIDDEN_ALGORITHMS:
+    if _alg in OIDC_ALGORITHMS:
+        raise RuntimeError(
+            f"OIDC_ALGORITHMS must not include symmetric algorithm '{_alg}'. "
+            "Only asymmetric algorithms (RS256, ES256) are permitted."
+        )
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+JWKS_REFRESH_INTERVAL_SECONDS = 900  # 15 minutes
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
+# ── JWKS Cache ─────────────────────────────────────────────────────────────────
+_jwks_cache: Optional[dict] = None
+_jwks_fetched_at: float = 0.0
+_jwks_lock = asyncio.Lock()
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+async def _get_jwks() -> dict:
+    """Fetch JWKS from the OIDC provider's well-known endpoint with caching."""
+    global _jwks_cache, _jwks_fetched_at
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({ "exp": expire })
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
-    return encoded_jwt
+    now = time.monotonic()
+    if _jwks_cache and (now - _jwks_fetched_at) < JWKS_REFRESH_INTERVAL_SECONDS:
+        return _jwks_cache
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    async with _jwks_lock:
+        # Double-check after acquiring lock
+        now = time.monotonic()
+        if _jwks_cache and (now - _jwks_fetched_at) < JWKS_REFRESH_INTERVAL_SECONDS:
+            return _jwks_cache
+
+        # Discover JWKS endpoint via OpenID configuration
+        discovery_url = f"{OIDC_ISSUER.rstrip('/')}/.well-known/openid-configuration"
+        logger.info("Fetching OIDC discovery document from %s", discovery_url)
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                discovery = (await client.get(discovery_url)).json()
+                jwks_uri = discovery["jwks_uri"]
+                jwks = (await client.get(jwks_uri)).json()
+                _jwks_cache = jwks
+                _jwks_fetched_at = time.monotonic()
+                logger.info("JWKS refreshed: %d key(s) loaded", len(jwks.get("keys", [])))
+                return jwks
+            except Exception as exc:
+                logger.error("Failed to fetch JWKS: %s", exc)
+                # If we already have a stale cache, use it rather than failing cold
+                if _jwks_cache:
+                    logger.warning("Using stale JWKS cache.")
+                    return _jwks_cache
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Authentication service unavailable: cannot reach OIDC provider",
+                )
+
+# ── Token Models ───────────────────────────────────────────────────────────────
+class UserInfo(BaseModel):
+    sub: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    roles: List[str] = []
+    raw_claims: dict = {}
+
+# ── Bearer Scheme ──────────────────────────────────────────────────────────────
+_http_bearer = HTTPBearer(auto_error=True)
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+) -> UserInfo:
+    """
+    FastAPI dependency: validates the Bearer token against the OIDC JWKS.
+    Returns a `UserInfo` object or raises HTTP 401.
+    """
+    token = credentials.credentials
+
+    # Peek at the header without verifying to detect forbidden algorithms
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None or username not in MOCK_USERS:
-            raise credentials_exception
-        return MOCK_USERS[username]
-    except JWTError:
-        raise credentials_exception
-
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = MOCK_USERS.get(form_data.username)
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        unverified_header = jwt.get_unverified_header(token)
+    except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=f"Invalid token header: {exc}",
         )
-    access_token = create_access_token(data={"sub": user["username"], "role": user["role"]})
-    return { "access_token": access_token, "token_type": "bearer" }
+
+    alg = unverified_header.get("alg", "")
+    if alg in _FORBIDDEN_ALGORITHMS:
+        logger.warning("Rejected token using forbidden algorithm: %s", alg)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Algorithm '{alg}' is not permitted",
+        )
+
+    if alg not in OIDC_ALGORITHMS:
+        logger.warning("Rejected token using unexpected algorithm: %s", alg)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Algorithm '{alg}' is not in the allowed list",
+        )
+
+    jwks = await _get_jwks()
+
+    try:
+        claims = jwt.decode(
+            token,
+            jwks,
+            algorithms=OIDC_ALGORITHMS,
+            audience=OIDC_CLIENT_ID,
+            issuer=OIDC_ISSUER,
+            options={"require_exp": True},
+        )
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+        )
+    except (JWTError, JWKError) as exc:
+        logger.warning("Token validation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate token",
+        )
+
+    # Extract roles — support both flat list and Keycloak's nested realm_access
+    roles: List[str] = claims.get("roles", [])
+    if not roles:
+        realm_access = claims.get("realm_access", {})
+        roles = realm_access.get("roles", [])
+
+    return UserInfo(
+        sub=claims["sub"],
+        email=claims.get("email"),
+        name=claims.get("name"),
+        roles=roles,
+        raw_claims=claims,
+    )
+
+# ── Role Enforcement ───────────────────────────────────────────────────────────
+def require_role(*required_roles: str):
+    """
+    FastAPI dependency factory: raises HTTP 403 if the user lacks ANY of the
+    required roles.
+
+    Usage:
+        @router.post("/approve", dependencies=[Depends(require_role("SRE_Admin", "Approver"))])
+    """
+    async def _check(user: UserInfo = Depends(get_current_user)) -> UserInfo:
+        for role in required_roles:
+            if role not in user.roles:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Role '{role}' required",
+                )
+        return user
+    return _check
+
+# ── Router (no login endpoint — identity is delegated to OIDC provider) ────────
+router = APIRouter()
+
+@router.get("/api/auth/me")
+async def get_me(user: UserInfo = Depends(get_current_user)):
+    """Return the current user's profile extracted from the OIDC token."""
+    return {
+        "sub": user.sub,
+        "email": user.email,
+        "name": user.name,
+        "roles": user.roles,
+    }
